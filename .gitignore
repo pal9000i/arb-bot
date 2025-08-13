@@ -4,6 +4,7 @@ CLAUDE.md
 minikube-darwin-arm64
 
 # Secrets and sensitive configuration
+secrets.yaml
 secrets.env
 .env
 *.key
