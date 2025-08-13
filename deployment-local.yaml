@@ -1,0 +1,222 @@
+# Local development version of deployment.yaml
+# Uses imagePullPolicy: Never for local images
+# This avoids modifying the production-ready deployment.yaml
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arrakis-arbitrage
+  labels:
+    name: arrakis-arbitrage
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: namespace
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arrakis-config
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: config
+data:
+  RUST_LOG: "info"
+  ROCKET_ADDRESS: "0.0.0.0"
+  ROCKET_PORT: "8000"
+  ACROSS_TIMEOUT_SECS: "10"
+  ACROSS_API_URL: "https://app.across.to/api/suggested-fees"
+  ETH_WETH_ADDRESS: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  BASE_WETH_ADDRESS: "0x4200000000000000000000000000000000000006"
+  ETH_USDC_ADDRESS: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+  BASE_USDC_ADDRESS: "0x833589fCD6eDb6E08f4c7C32D4f71b54bDA02913"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arrakis-secrets
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: secret
+type: Opaque
+stringData:
+  # Replace these demo URLs with actual RPC endpoints or create secret from secrets.env file
+  # kubectl create secret generic arrakis-secrets --from-env-file=secrets.env -n arrakis-arbitrage --dry-run=client -o yaml | kubectl apply -f -
+  ETHEREUM_RPC_URL: "https://eth-mainnet.g.alchemy.com/v2/YOUR_ETHEREUM_KEY"
+  BASE_RPC_URL: "https://base-mainnet.g.alchemy.com/v2/YOUR_BASE_KEY"
+  CEX_API_URL: "https://api.coinbase.com/v2/exchange-rates?currency=ETH"
+  UNISWAP_V4_STATE_VIEW: "0x7ffe42c4a5deea5b0fec41c94c136cf115597227"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arrakis-service
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: app
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arrakis-deployment
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: app
+    app.kubernetes.io/version: "0.1.0"
+spec:
+  replicas: 1  # Reduced for local testing
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arrakis-arbitrage
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: arrakis-arbitrage
+        app.kubernetes.io/component: app
+        app.kubernetes.io/version: "0.1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: arrakis-service-account
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: arrakis-arbitrage
+          image: arrakis-arbitrage:latest
+          imagePullPolicy: Never  # Use local image only
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: arrakis-addresses
+            - secretRef:
+                name: arrakis-secrets
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: ROCKET_ADDRESS
+              value: "0.0.0.0"
+            - name: ROCKET_PORT
+              value: "8000"
+          resources:
+            limits:
+              cpu: "500m"  # Reduced for local testing
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        kubernetes.io/os: linux
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: arrakis-service-account
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: arrakis-role
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: arrakis-role-binding
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: arrakis-service-account
+    namespace: arrakis-arbitrage
+roleRef:
+  kind: Role
+  name: arrakis-role
+  apiGroup: rbac.authorization.k8s.io

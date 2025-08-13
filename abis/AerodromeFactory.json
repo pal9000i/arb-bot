@@ -1,0 +1,27 @@
+[
+  {
+    "type": "function",
+    "name": "getPool",
+    "stateMutability": "view",
+    "inputs": [
+      {"name": "tokenA", "type": "address"},
+      {"name": "tokenB", "type": "address"},
+      {"name": "stable", "type": "bool"}
+    ],
+    "outputs": [
+      {"name": "pool", "type": "address"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getFee",
+    "stateMutability": "view",
+    "inputs": [
+      {"name": "pool", "type": "address"},
+      {"name": "_stable", "type": "bool"}
+    ],
+    "outputs": [
+      {"name": "fee", "type": "uint256"}
+    ]
+  }
+]

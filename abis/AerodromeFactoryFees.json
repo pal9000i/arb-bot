@@ -1,0 +1,16 @@
+[
+  {
+    "type": "function",
+    "name": "volatileFee",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint256"}]
+  },
+  {
+    "type": "function",
+    "name": "stableFee",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint256"}]
+  }
+]

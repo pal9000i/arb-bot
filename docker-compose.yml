@@ -1,0 +1,55 @@
+# Docker Compose for local development and testing
+version: '3.8'
+
+services:
+  arrakis-arbitrage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arrakis-arbitrage
+    ports:
+      - "8000:8000"
+    env_file:
+      - secrets.env
+      - addresses.env
+    environment:
+      # Override specific settings for Docker
+      RUST_LOG: "debug"
+      ROCKET_ADDRESS: "0.0.0.0"
+      ROCKET_PORT: "8000"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Security
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    
+    # Temporary volumes for the read-only filesystem
+    tmpfs:
+      - /tmp:size=100M,noexec,nosuid,nodev
+      - /app/.cache:size=50M,noexec,nosuid,nodev
+
+networks:
+  default:
+    name: arrakis-network

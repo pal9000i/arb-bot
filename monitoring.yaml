@@ -1,0 +1,135 @@
+# Additional monitoring and observability resources
+# Deploy these after the main application for comprehensive monitoring
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: arrakis-service-monitor
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: monitoring
+spec:
+  # ServiceMonitor matches **Services** by these labels
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arrakis-arbitrage
+      app.kubernetes.io/component: service
+  namespaceSelector:
+    matchNames:
+      - arrakis-arbitrage
+  endpoints:
+    - port: http           # must match the Service port name
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arrakis-grafana-dashboard
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: monitoring
+    grafana_dashboard: "1"
+data:
+  arrakis-dashboard.json: |
+    {
+      "title": "Arrakis Arbitrage Service",
+      "tags": ["arrakis", "arbitrage", "defi"],
+      "timezone": "browser",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Request Rate",
+          "type": "graph",
+          "targets": [
+            {
+              "expr": "rate(http_requests_total{namespace=\"arrakis-arbitrage\", service=\"arrakis-service\"}[5m])",
+              "legendFormat": "{{method}} {{status}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Response Time (p95)",
+          "type": "graph",
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace=\"arrakis-arbitrage\", service=\"arrakis-service\"}[5m]))",
+              "legendFormat": "p95"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Arbitrage Opportunities Found",
+          "type": "graph",
+          "targets": [
+            {
+              "expr": "increase(arbitrage_opportunities_total{namespace=\"arrakis-arbitrage\", service=\"arrakis-service\"}[5m])",
+              "legendFormat": "Opportunities"
+            }
+          ]
+        }
+      ],
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "schemaVersion": 36,
+      "version": 1
+    }
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: arrakis-alerts
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: monitoring
+spec:
+  groups:
+    - name: arrakis.rules
+      rules:
+        - alert: ArrakisServiceDown
+          expr: max by (service, namespace) (up{namespace="arrakis-arbitrage", service="arrakis-service"}) == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Arrakis Arbitrage Service is down"
+            description: "The Arrakis Arbitrage Service has been down for more than 1 minute."
+
+        - alert: ArrakisHighErrorRate
+          expr: rate(http_requests_total{namespace="arrakis-arbitrage", service="arrakis-service", status=~"5.."}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High error rate in Arrakis service"
+            description: "Error rate is {{ $value }} errors/sec over the last 5 minutes."
+
+        - alert: ArrakisHighResponseTime
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace="arrakis-arbitrage", service="arrakis-service"}[5m])) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High response time in Arrakis service"
+            description: "95th percentile response time is {{ $value }} seconds over the last 5 minutes."
+
+        - alert: ArrakisNoArbitrageOpportunities
+          expr: increase(arbitrage_opportunities_total{namespace="arrakis-arbitrage", service="arrakis-service"}[1h]) == 0
+          for: 30m
+          labels:
+            severity: info
+          annotations:
+            summary: "No arbitrage opportunities found"
+            description: "No arbitrage opportunities have been found in the last hour."

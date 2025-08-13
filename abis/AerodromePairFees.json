@@ -1,0 +1,20 @@
+[
+  {
+    "type": "function",
+    "name": "fee",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "", "type": "uint256"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "fees",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "", "type": "uint256"}
+    ]
+  }
+]

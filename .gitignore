@@ -1,0 +1,13 @@
+target
+CLAUDE.md
+.claude/
+minikube-darwin-arm64
+
+# Secrets and sensitive configuration
+secrets.env
+.env
+*.key
+*.pem
+
+# Keep example files
+!secrets.env.example

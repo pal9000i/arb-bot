@@ -1,0 +1,270 @@
+# Kubernetes manifests for Arrakis Arbitrage Service
+# Production-ready deployment with security, monitoring, and scaling
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arrakis-arbitrage
+  labels:
+    name: arrakis-arbitrage
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: namespace
+
+# ConfigMap is now generated from addresses.env using:
+# kubectl create configmap arrakis-addresses --from-env-file=addresses.env -n arrakis-arbitrage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arrakis-service
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: app
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arrakis-deployment
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: app
+    app.kubernetes.io/version: "0.1.0"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arrakis-arbitrage
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: arrakis-arbitrage
+        app.kubernetes.io/component: app
+        app.kubernetes.io/version: "0.1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: arrakis-service-account
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: arrakis-arbitrage
+          image: arrakis-arbitrage:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: arrakis-addresses
+            - secretRef:
+                name: arrakis-secrets
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: ROCKET_ADDRESS
+              value: "0.0.0.0"
+            - name: ROCKET_PORT
+              value: "8000"
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        kubernetes.io/os: linux
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - arrakis-arbitrage
+                topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: arrakis-service-account
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: arrakis-role
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: arrakis-role-binding
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: arrakis-service-account
+    namespace: arrakis-arbitrage
+roleRef:
+  kind: Role
+  name: arrakis-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: arrakis-pdb
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: availability
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: arrakis-arbitrage
+      app.kubernetes.io/component: app
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arrakis-network-policy
+  namespace: arrakis-arbitrage
+  labels:
+    app.kubernetes.io/name: arrakis-arbitrage
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: arrakis-arbitrage
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: arrakis-arbitrage
+      ports:
+        - protocol: TCP
+          port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow DNS to kube-dns
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS to anywhere (RPC, Across, CEX)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow HTTP to anywhere if needed (healthchecks/internal)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80

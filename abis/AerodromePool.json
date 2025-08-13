@@ -1,0 +1,52 @@
+[
+  {
+    "type": "function",
+    "name": "getReserves",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "reserve0", "type": "uint256"},
+      {"name": "reserve1", "type": "uint256"},
+      {"name": "blockTimestampLast", "type": "uint256"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "token0",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "", "type": "address"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "token1",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "", "type": "address"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "stable",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [
+      {"name": "", "type": "bool"}
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getAmountOut",
+    "stateMutability": "view",
+    "inputs": [
+      {"name": "amountIn", "type": "uint256"},
+      {"name": "tokenIn", "type": "address"}
+    ],
+    "outputs": [
+      {"name": "amountOut", "type": "uint256"}
+    ]
+  }
+]
